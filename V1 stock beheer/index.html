@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voorraadbeheer Tandartspraktijk</title>
+
+<!-- PWA manifest + themekleur -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4aa8a8">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- SheetJS voor Excel-export (laat je huidige JS werken met .xlsx) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- JOUW bestanden -->
+<link rel="stylesheet" href="style.css" />
+<script defer src="script.js"></script>
+
+<!-- Service worker registreren -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(console.error);
+    });
+  }
+</script>
+
+</head>
+
+<body>
+
+  <div class="container">
+
+    <!-- UITLOGKNOP -->
+    <button id="logoutBtn" style="display:none;">Uitloggen</button>
+
+    <!-- LOGIN -->
+    <section id="loginSection">
+      <h1>Inloggen Medewerker</h1>
+      <label for="codeInput">Voer je persoonlijke code in:</label>
+      <input type="text" id="codeInput" placeholder="Bijv. 1234" autocomplete="off" />
+      <button id="loginBtn">Inloggen</button>
+      <p id="loginWarning"></p>
+    </section>
+
+    <!-- APP -->
+    <section id="appSection" class="hidden">
+      <h1>Registreer materiaalgebruik</h1>
+      <p id="userInfo" class="user-display"></p>
+
+      <label for="barcode">Product barcode:</label>
+      <input type="text" id="barcode" list="productList" placeholder="Typ of scan product" autocomplete="off" />
+      <datalist id="productList"></datalist>
+
+      <label for="quantity">Aantal (wordt automatisch negatief):</label>
+      <input type="number" id="quantity" placeholder="Bijv. 1" />
+
+      <div class="context-buttons">
+        <label>Kies Kabinet:</label>
+        <button class="context-button" data-context="Kabinet 1">Kabinet 1</button>
+        <button class="context-button" data-context="Kabinet 2">Kabinet 2</button>
+        <button class="context-button" data-context="Kabinet 3">Kabinet 3</button>
+        <button class="context-button" data-context="Kabinet 4">Kabinet 4</button>
+        <button class="context-button" data-context="Kabinet 5">Kabinet 5</button>
+        <button class="context-button" data-context="Kabinet 6">Kabinet 6</button>
+      </div>
+
+      <button id="registerBtn">Gebruik registreren</button>
+
+      <p id="appMessage"></p>
+
+      <h2>Lage voorraad producten</h2>
+      <ul id="lowStockList"></ul>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="openStockBtn">Voorraadbeheer</button>
+        <!-- Alleen zichtbaar voor Edu/Nat -->
+        <button id="openAdminBtn" class="hidden">Beheer</button>
+      </div>
+
+      <h2>Logboek gebruik (negatief aantal)</h2>
+      <ul id="logList"></ul>
+    </section>
+
+    <!-- VOORRAADBEHEER -->
+<section id="stockManagementSection" class="hidden">
+  <button onclick="backToApp()" style="margin-bottom:15px;">Terug</button>
+
+  <h1>Voorraadbeheer Tandartspraktijk</h1>
+
+  <h2>Producten en voorraad</h2>
+  <ul id="stockList"></ul>
+
+  <!-- 👇 Nieuw: publieke producten-overzicht -->
+  <div class="section" style="margin-top: 20px;">
+    <button id="togglePublicProductsBtn" style="margin-bottom:10px;">Toon (read-only) producten-overzicht</button>
+    <div id="publicProductsPanel" class="hidden">
+      <h2>Producten (code • naam • voorraad)</h2>
+      <table id="publicProductsTable">
+        <thead>
+          <tr>
+            <th>Barcode</th>
+            <th>Naam</th>
+            <th>Voorraad</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- 👆 Knop staat boven "Voorraad aanvullen" -->
+
+  <!-- VOORRAAD AANVULLEN -->
+  <div class="section">
+    <h2>Voorraad aanvullen</h2>
+    <label for="selectProductStock">Kies product of typ...</label>
+    <input type="text" id="selectProductStock" list="productList" placeholder="Bijv. zak of scan..." autocomplete="off" />
+    <label for="quantityStock">Aantal om toe te voegen</label>
+    <input type="number" id="quantityStock" placeholder="Bijv. 5" />
+    <p id="addStockWarning"></p>
+    <button onclick="addToStock()">Voeg toe aan voorraad</button>
+  </div>
+
+  <!-- NIEUW PRODUCT -->
+  <div class="section">
+    <h2>Nieuw product toevoegen</h2>
+    <label for="newCode">Productcode (gescand of manueel)</label>
+    <input type="text" id="newCode" placeholder="Bijv. +ADT10131255" autocomplete="off" />
+    <label for="newName">Productnaam (zichtbare naam)</label>
+    <input type="text" id="newName" placeholder="Bijv. zak of naald" />
+    <label for="newQty">Beginvoorraad</label>
+    <input type="number" id="newQty" placeholder="Bijv. 10" />
+    <p id="newProductWarning"></p>
+    <button onclick="addNewProduct()">Voeg toe aan voorraad</button>
+  </div>
+
+  <h2>Volledig Logboek</h2>
+  <table id="fullLogList">
+    <thead>
+      <tr>
+        <th>Medewerker</th>
+        <th>Product</th>
+        <th>Aantal</th>
+        <th>Tijdstip</th>
+        <th>Kabinet</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+
+    <!-- 🔐 BEHEER (alleen Edu & Nat) -->
+    <section id="adminSection" class="hidden">
+      <button onclick="closeAdmin()" style="margin-bottom:15px;">Terug</button>
+      <h1>Algemeen Beheer</h1>
+
+      <div class="section">
+        <h2>Producten (code • naam • voorraad)</h2>
+        <table id="adminProductsTable">
+  <thead>
+    <tr>
+      <th>Barcode</th>
+      <th>Naam</th>
+      <th>Voorraad</th>
+      <th>Acties</th> <!-- 👈 nieuw -->
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+      </div>
+
+      <div class="section">
+        <h2>Gebruikers</h2>
+        <table id="adminUsersTable">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Naam</th>
+              <th>Acties</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div style="margin-top:10px;">
+          <label for="newUserCode">Nieuwe gebruikerscode</label>
+          <input type="text" id="newUserCode" placeholder="Bijv. 1234" />
+          <label for="newUserName">Naam</label>
+          <input type="text" id="newUserName" placeholder="Bijv. Sam" />
+          <p id="adminUsersWarning"></p>
+          <button id="addUserBtn">Gebruiker toevoegen</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Logboek Download</h2>
+        <button id="downloadLogBtn">Download logboek (Excel)</button>
+      </div>
+    </section>
+
+  </div>
+
+</body>
+</html>

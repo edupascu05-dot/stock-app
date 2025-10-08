@@ -1,0 +1,160 @@
+body {
+  background-color: #f5f5f5;
+  color: #1a1a1a;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 20px;
+}
+
+#logoutBtn {
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  background-color: #4aa8a8;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 9999;
+  transition: background-color 0.3s ease;
+  display: none;
+  width: auto;
+}
+
+.user-display {
+  position: fixed;
+  top: 30px;
+  right: 200px; /* zit naast logout knop */
+  font-size: 1.1rem;
+  padding: 5px 30px;
+  border-radius: 6px;
+  background-color: #4aa8a8;
+  color: #ffffff;
+  transition: background-color 0.3s ease;
+  z-index: 9998;
+}
+
+#logoutBtn:hover {
+  background: #8e3a3a; 
+}
+
+.user-display:hover {
+  background: #3a8e8e;
+}
+
+.hidden {
+  display: none;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+}
+
+h1, h2 {
+  color: #4aa8a8;
+}
+
+label {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.9em;
+}
+
+input, select, button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  background: #eaeaea;
+  color: #1a1a1a;
+  border: 2px solid #bbb;
+  border-radius: 4px;
+}
+
+button {
+  background-color: #4aa8a8;
+  color: white;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+  margin-top: 15px;
+}
+
+button:hover {
+  background-color: #3a8e8e;
+}
+
+ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+ul li {
+  padding: 4px 0;
+}
+
+ul li.lowStock {
+  color: #f44336;
+  font-weight: bold;
+}
+
+.context-buttons {
+  margin-top: 10px;
+}
+
+.context-button {
+  background: #ddd;
+  color: #1a1a1a;
+  border: 2px solid #aaa;
+  padding: 7px 12px;
+  margin-right: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.context-button.selected {
+  background: #4aa8a8;
+  color: white;
+  border-color: #4aa8a8;
+}
+
+.section {
+  margin-bottom: 30px;
+}
+
+/* Feedback */
+#appMessage, #loginWarning, #addStockWarning, #newProductWarning {
+  margin-top: 10px;
+  font-weight: bold;
+}
+
+#appMessage.success,
+#newProductWarning, 
+#addStockWarning {
+  color: #2e7d32;
+}
+
+#appMessage.error,
+#loginWarning {
+  color: #f44336;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+th, td {
+  border: 2px solid #bbb;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background-color: #e0e0e0;
+}
+
+

@@ -1,5 +1,5 @@
 // ====== CLOUD SYNC CONFIG (Google Sheets) ======
-const SYNC_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxVHlR1A2TOHIBeDYXgBBnw5nA8lpPwbs4SFO_JlDAR/exec';
+const SYNC_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxqX665-NrSiGNBWuwt9gfpLPJKBOr1V9nBe9T4ABWCb6NQz8ZEw2wbdUzNC8NviJNRTA/exec';
 const SYNC_SECRET   = 'ADRfirst'; // moet hetzelfde zijn als SHARED_SECRET in Apps Script
 
 // ========= SEED & STORAGE =========
@@ -334,8 +334,17 @@ function registerAction() {
 
   stock[barcodeValue].quantity += delta;
   saveStock();
-  logbook.push({ user: loggedInUser, product: barcodeValue, quantity: delta, timestamp: Date.now(), context: selectedContext });
-  saveLogbook();
+const entry = { 
+  user: loggedInUser, 
+  product: barcodeValue, 
+  quantity: delta, 
+  timestamp: Date.now(), 
+  context: selectedContext 
+};
+
+logbook.push(entry);
+saveLogbook();
+syncLogEntryToSheet(entry); // 👈 extra
   syncToCloud(); // <<<<< Sheets sync
 
   if (message) { message.textContent = `Gebruik van ${stock[barcodeValue].name} geregistreerd: ${-delta} stuks.`; message.className = 'success'; }
@@ -390,8 +399,17 @@ function addToStock() {
 
   stock[barcode].quantity += qty;
   saveStock();
-  logbook.push({ user: loggedInUser, product: barcode, quantity: qty, timestamp: Date.now(), context: 'Voorraadbeheer' });
-  saveLogbook();
+const entry = { 
+  user: loggedInUser, 
+  product: barcode, 
+  quantity: qty, 
+  timestamp: Date.now(), 
+  context: 'Voorraadbeheer' 
+};
+
+logbook.push(entry);
+saveLogbook();
+syncLogEntryToSheet(entry); // 👈 extra
   syncToCloud(); // <<<<< Sheets sync
 
   inputEl.value = stock[barcode].name;
@@ -430,8 +448,17 @@ function addNewProduct() {
 
   stock[code] = { name, quantity: qty };
   saveStock();
-  logbook.push({ user: loggedInUser, product: code, quantity: qty, timestamp: Date.now(), context: 'Nieuw product' });
-  saveLogbook();
+const entry = { 
+  user: loggedInUser, 
+  product: code, 
+  quantity: qty, 
+  timestamp: Date.now(), 
+  context: 'Nieuw product' 
+};
+
+logbook.push(entry);
+saveLogbook();
+syncLogEntryToSheet(entry); // 👈 extra
   syncToCloud(); // <<<<< Sheets sync
 
   renderStockList();
@@ -762,6 +789,36 @@ function validateNewProductLive() {
   warning.textContent = msg;
 }
 
+// ========== CLOUD SYNC NAAR GOOGLE SHEETS ==========
+
+// VUL HIER JE EIGEN /exec URL IN (NIET /dev!)
+const SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxqX665-NrSiGNBWuwt9gfpLPJKBOr1V9nBe9T4ABWCb6NQz8ZEw2wbdUzNC8NviJNRTA/exec';
+const SHEETS_SECRET   = 'ADRfirst'; // zelfde als in Apps Script
+
+async function syncLogEntryToSheet(entry) {
+  try {
+    const res = await fetch(SHEETS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        secret: SHEETS_SECRET,
+        payload: entry
+      })
+    });
+
+    // Dit logje wil ik graag in je console zien straks
+    console.log('Sheets sync verstuurd ✅', entry);
+
+    // Optioneel: response checken
+    const text = await res.text();
+    console.log('Sheets antwoord:', text);
+  } catch (err) {
+    console.error('Sheets sync ERROR ❌', err);
+  }
+}
+
 // ============= ANALYTICS HELPERS =============
 function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); }
 function addDays(ts, n){ const d=new Date(ts); d.setDate(d.getDate()+n); return d.getTime(); }
@@ -1033,3 +1090,4 @@ function downloadAnalyticsExcel(period='week'){
 
   window.seedFakeData = seedFakeData;
 })();
+

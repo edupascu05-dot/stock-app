@@ -1,7 +1,3 @@
-// ====== CLOUD SYNC CONFIG (Google Sheets) ======
-const SYNC_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxqX665-NrSiGNBWuwt9gfpLPJKBOr1V9nBe9T4ABWCb6NQz8ZEw2wbdUzNC8NviJNRTA/exec';
-const SYNC_SECRET   = 'ADRfirst'; // moet hetzelfde zijn als SHARED_SECRET in Apps Script
-
 // ========= SEED & STORAGE =========
 
 // Seed users; mutabele 'users' i.p.v. hardcoded
@@ -31,7 +27,7 @@ const stockManagementPassword = '1111';
 let loggedInUser = null;                     // naam
 let selectedContext = null;
 let stock = JSON.parse(localStorage.getItem('stock')) || {};   // { barcode: {name, quantity} }
-let logbook = JSON.parse(localStorage.getItem('logbook')) || []; // [{ user, product, quantity, timestamp, context }]
+let logbook = JSON.parse(localStorage.getItem('logbook')) || [];
 
 // ========= PERSIST =========
 function saveStock() { localStorage.setItem('stock', JSON.stringify(stock)); }
@@ -39,37 +35,42 @@ function saveLogbook() { localStorage.setItem('logbook', JSON.stringify(logbook)
 function saveUser(user) { localStorage.setItem('loggedInUser', user); }
 function loadUser() { return localStorage.getItem('loggedInUser'); }
 
-// ========= CLOUD SYNC FUNCTIE =========
+// ========== CLOUD SYNC NAAR GOOGLE SHEETS ==========
+const SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxVHlR1A2TOHIBeDYXgBBnw5nA8lpPwbs4SFO_JlDAR/exec'; // /exec URL
+const SHEETS_SECRET   = 'ADRfirst'; // zelfde als SHARED_SECRET in Apps Script
+
 async function syncToCloud() {
   try {
+    const stockArray = Object.entries(stock).map(([barcode, item]) => ({
+      barcode,
+      name: item.name,
+      quantity: item.quantity
+    }));
+
+    const logArray = logbook.map(entry => ({
+      user: entry.user,
+      product: entry.product,
+      quantity: entry.quantity,
+      timestamp: entry.timestamp,
+      context: entry.context
+    }));
+
     const payload = {
-      secret: SYNC_SECRET,
-      stock: Object.entries(stock).map(([barcode, v]) => ({
-        barcode,
-        name: v.name,
-        quantity: v.quantity
-      })),
-      logbook: logbook.map(e => ({
-        user: e.user,
-        product: e.product,
-        quantity: e.quantity,
-        timestamp: e.timestamp,
-        context: e.context
-      }))
+      secret: SHEETS_SECRET,
+      stock: stockArray,
+      logbook: logArray
     };
 
-    const res = await fetch(SYNC_ENDPOINT, {
+    await fetch(SHEETS_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      mode: 'no-cors',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
       body: JSON.stringify(payload)
     });
 
-    const text = await res.text();
-    if (text !== 'OK') {
-      console.warn('Sync response from Sheets:', text);
-    } else {
-      console.log('Sheets sync ✅');
-    }
+    console.log('Sheets sync verstuurd ✅', payload);
   } catch (err) {
     console.error('Sheets sync mislukt:', err);
   }
@@ -166,7 +167,7 @@ function renderStockList() {
 function renderUserInfo() {
   const userInfo = document.getElementById('userInfo');
   if (!userInfo) return;
-  userInfo.textContent = loggedInUser ? `👤 Ingelogd als: ${loggedInUser}` : '';
+  userInfo.textContent = `👤 Ingelogd als: ${loggedInUser || ''}`;
 }
 
 // ========= PUBLIC PRODUCTS (READ-ONLY) =========
@@ -207,7 +208,6 @@ function renderAdminProducts() {
       tbody.appendChild(tr);
     });
 
-  // Hook: delete product
   tbody.querySelectorAll('.delete-product-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const bc = btn.getAttribute('data-barcode');
@@ -233,7 +233,6 @@ function renderAdminUsers() {
       tbody.appendChild(tr);
     });
 
-  // Hook remove
   tbody.querySelectorAll('button.danger-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const code = btn.getAttribute('data-code');
@@ -300,15 +299,14 @@ function registerAction() {
 
   clearMessages();
 
-  // barcode of naam → barcodeValue
   const input = inputEl.value.trim();
   let barcodeValue = null;
 
   if (stock.hasOwnProperty(input)) {
-    barcodeValue = input;                      // scanner barcode
-    inputEl.value = stock[input].name;         // toon naam
+    barcodeValue = input;
+    inputEl.value = stock[input].name;
   } else {
-    barcodeValue = findBarcodeByName(input);   // handmatig ingevoerde naam
+    barcodeValue = findBarcodeByName(input);
   }
 
   const quantityValue = qtyEl.value.trim();
@@ -334,18 +332,11 @@ function registerAction() {
 
   stock[barcodeValue].quantity += delta;
   saveStock();
-const entry = { 
-  user: loggedInUser, 
-  product: barcodeValue, 
-  quantity: delta, 
-  timestamp: Date.now(), 
-  context: selectedContext 
-};
 
-logbook.push(entry);
-saveLogbook();
-syncLogEntryToSheet(entry); // 👈 extra
-  syncToCloud(); // <<<<< Sheets sync
+  const entry = { user: loggedInUser, product: barcodeValue, quantity: delta, timestamp: Date.now(), context: selectedContext };
+  logbook.push(entry);
+  saveLogbook();
+  syncToCloud();
 
   if (message) { message.textContent = `Gebruik van ${stock[barcodeValue].name} geregistreerd: ${-delta} stuks.`; message.className = 'success'; }
 
@@ -353,7 +344,7 @@ syncLogEntryToSheet(entry); // 👈 extra
   renderUsageLog();
   renderFullLog();
 
-  clearUsageInputs(); // context behouden
+  clearUsageInputs();
   inputEl.focus();
 }
 
@@ -399,18 +390,11 @@ function addToStock() {
 
   stock[barcode].quantity += qty;
   saveStock();
-const entry = { 
-  user: loggedInUser, 
-  product: barcode, 
-  quantity: qty, 
-  timestamp: Date.now(), 
-  context: 'Voorraadbeheer' 
-};
 
-logbook.push(entry);
-saveLogbook();
-syncLogEntryToSheet(entry); // 👈 extra
-  syncToCloud(); // <<<<< Sheets sync
+  const entry = { user: loggedInUser, product: barcode, quantity: qty, timestamp: Date.now(), context: 'Voorraadbeheer' };
+  logbook.push(entry);
+  saveLogbook();
+  syncToCloud();
 
   inputEl.value = stock[barcode].name;
 
@@ -436,7 +420,6 @@ function addNewProduct() {
   const name = nameEl.value.trim();
   const qty = Number(qtyEl.value.trim());
 
-  // Unieke code + unieke NAAM (case-insensitive)
   const nameExists = Object.values(stock).some(
     p => (p.name || '').trim().toLowerCase() === name.toLowerCase()
   );
@@ -448,18 +431,11 @@ function addNewProduct() {
 
   stock[code] = { name, quantity: qty };
   saveStock();
-const entry = { 
-  user: loggedInUser, 
-  product: code, 
-  quantity: qty, 
-  timestamp: Date.now(), 
-  context: 'Nieuw product' 
-};
 
-logbook.push(entry);
-saveLogbook();
-syncLogEntryToSheet(entry); // 👈 extra
-  syncToCloud(); // <<<<< Sheets sync
+  const entry = { user: loggedInUser, product: code, quantity: qty, timestamp: Date.now(), context: 'Nieuw product' };
+  logbook.push(entry);
+  saveLogbook();
+  syncToCloud();
 
   renderStockList();
   renderLowStockList();
@@ -512,7 +488,6 @@ function removeUser(code) {
   if (!isAdminUser(loggedInUser)) { warning.textContent = 'Alleen admins kunnen gebruikers verwijderen.'; return; }
   if (!users[code]) { warning.textContent = 'Gebruiker bestaat niet.'; return; }
 
-  // Beveiliging: niet jezelf verwijderen, en minstens 1 admin behouden
   if (users[code] === loggedInUser) { warning.textContent = 'Je kunt jezelf niet verwijderen.'; return; }
 
   const isTargetAdmin = isAdminUser(users[code]);
@@ -527,7 +502,7 @@ function removeUser(code) {
 }
 
 function removeProduct(barcode) {
-  if (!isAdminUser(loggedInUser)) return;        // gatekeep
+  if (!isAdminUser(loggedInUser)) return;
   const prod = stock[barcode];
   if (!prod) return;
 
@@ -540,9 +515,7 @@ function removeProduct(barcode) {
 
   delete stock[barcode];
   saveStock();
-  syncToCloud(); // <<<<< Sheets sync na verwijderen
 
-  // UI refresh
   renderProductList();
   renderStockList();
   renderLowStockList();
@@ -554,8 +527,8 @@ function removeProduct(barcode) {
   if (warning) warning.textContent = `Product "${prod.name}" verwijderd.`;
 }
 
+// ========= LOGBOEK → EXCEL =========
 function downloadLogbookExcel() {
-  // Headers + data
   const headers = ['Medewerker','Barcode','Productnaam','Aantal','Tijdstip','Kabinet'];
   const rows = logbook.map(entry => {
     const date = new Date(entry.timestamp);
@@ -570,12 +543,9 @@ function downloadLogbookExcel() {
     ];
   });
 
-  // Maak sheet
   const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Logboek");
-
-  // Export .xlsx
   XLSX.writeFile(workbook, "logboek.xlsx");
 }
 
@@ -594,7 +564,6 @@ window.onload = function () {
     renderFullLog();
     renderUserInfo();
 
-    // Admin knop tonen voor Edu/Nat
     const adminBtn = document.getElementById('openAdminBtn');
     if (adminBtn) adminBtn.classList.toggle('hidden', !isAdminUser(loggedInUser));
 
@@ -635,7 +604,7 @@ window.onload = function () {
     });
   }
 
-  // Voorraad aanvullen: normaliseer naar NAAM (geen auto-add)
+  // Voorraad aanvullen: normaliseer naar NAAM
   const stockInput = document.getElementById('selectProductStock');
   if (stockInput) {
     let normalizeTimer;
@@ -746,7 +715,7 @@ window.onload = function () {
     });
   }
 
-  // 🔘 Publieke producten-overzicht (read-only) togglen
+  // Publieke producten-overzicht (read-only) togglen
   const togglePublicBtn = document.getElementById('togglePublicProductsBtn');
   const publicPanel = document.getElementById('publicProductsPanel');
   if (togglePublicBtn && publicPanel) {
@@ -789,36 +758,6 @@ function validateNewProductLive() {
   warning.textContent = msg;
 }
 
-// ========== CLOUD SYNC NAAR GOOGLE SHEETS ==========
-
-// VUL HIER JE EIGEN /exec URL IN (NIET /dev!)
-const SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxqX665-NrSiGNBWuwt9gfpLPJKBOr1V9nBe9T4ABWCb6NQz8ZEw2wbdUzNC8NviJNRTA/exec';
-const SHEETS_SECRET   = 'ADRfirst'; // zelfde als in Apps Script
-
-async function syncLogEntryToSheet(entry) {
-  try {
-    const res = await fetch(SHEETS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        secret: SHEETS_SECRET,
-        payload: entry
-      })
-    });
-
-    // Dit logje wil ik graag in je console zien straks
-    console.log('Sheets sync verstuurd ✅', entry);
-
-    // Optioneel: response checken
-    const text = await res.text();
-    console.log('Sheets antwoord:', text);
-  } catch (err) {
-    console.error('Sheets sync ERROR ❌', err);
-  }
-}
-
 // ============= ANALYTICS HELPERS =============
 function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); }
 function addDays(ts, n){ const d=new Date(ts); d.setDate(d.getDate()+n); return d.getTime(); }
@@ -827,7 +766,7 @@ function getPeriodBounds(kind='week'){
   const now = new Date();
   if (kind === 'week') {
     const to = now.getTime();
-    const from = addDays(startOfDay(now), -6); // incl. vandaag → 7 dagen
+    const from = addDays(startOfDay(now), -6);
     return { from, to };
   }
   if (kind === 'month') {
@@ -963,7 +902,7 @@ function buildSummaryText(ana){
   ].join('\n');
 }
 
-// ============= EXCEL EXPORT (analytics) =============
+// ============= EXCEL EXPORT (meerdere tabs) =============
 function downloadAnalyticsExcel(period='week'){
   const ana = runAnalytics(period);
 
@@ -1005,89 +944,3 @@ function downloadAnalyticsExcel(period='week'){
   const filename = `rapport_${period}_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
-
-// ============= FAKE DATA SEEDER (optioneel) =============
-(function () {
-  let __seed = 42;
-  function rnd() { __seed = (__seed * 9301 + 49297) % 233280; return __seed / 233280; }
-  function randi(a, b) { return Math.floor(rnd() * (b - a + 1)) + a; }
-  function choice(arr) { return arr[randi(0, arr.length - 1)]; }
-  function startOfDayLocal(ts) { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); }
-
-  const PRODUCT_CATALOG = [
-    { code: '+ADT10131255', name: 'zak', qty: 120 },
-    { code: '+ADT20021111', name: 'klem A', qty: 60 },
-    { code: '+ADT3003BLUE', name: 'spuitje blauw', qty: 180 },
-    { code: 'IMPL-3.5x11', name: 'implantaat 3.5x11', qty: 15 },
-    { code: 'IMPL-4.0x10', name: 'implantaat 4.0x10', qty: 12 },
-    { code: 'COMP-A2', name: 'composiet A2', qty: 90 },
-    { code: 'COMP-A3', name: 'composiet A3', qty: 100 },
-    { code: 'ETCH-37', name: 'etsgel 37%', qty: 45 },
-    { code: 'BOND-Opti', name: 'bonding', qty: 55 },
-    { code: 'ANES-Art', name: 'verdoving articaine', qty: 80 },
-    { code: 'ANES-Lido', name: 'verdoving lidocaïne', qty: 70 },
-    { code: 'GLASSION', name: 'glasionomeer', qty: 30 },
-    { code: 'NAALD-30G', name: 'naald 30G', qty: 200 },
-    { code: 'RUB-DAM', name: 'rubberdam', qty: 40 }
-  ];
-
-  const USERS = ['Nat', 'Alex', 'Edu', 'Iri'];
-  const KAB = ['Kabinet 1', 'Kabinet 2', 'Kabinet 3', 'Kabinet 4', 'Kabinet 5', 'Kabinet 6'];
-
-  function seedFakeData(opts = {}) {
-    const {
-      clearExisting = true,
-      days = 45
-    } = opts;
-
-    if (clearExisting) {
-      localStorage.removeItem('stock');
-      localStorage.removeItem('logbook');
-    }
-
-    const stockLocal = {};
-    PRODUCT_CATALOG.forEach(p => stockLocal[p.code] = { name: p.name, quantity: p.qty });
-    const logLocal = [];
-    const now = Date.now();
-
-    function addLog(user, barcode, qty, ts, ctx) {
-      logLocal.push({ user, product: barcode, quantity: qty, timestamp: ts, context: ctx });
-      stockLocal[barcode].quantity += qty;
-    }
-
-    for (let d = days - 1; d >= 0; d--) {
-      const dayStart = startOfDayLocal(now - d * 24 * 3600 * 1000);
-      const eventsToday = randi(5, 15);
-
-      for (let e = 0; e < eventsToday; e++) {
-        const prod = choice(PRODUCT_CATALOG);
-        const bc = prod.code;
-        const user = choice(USERS);
-        const ctxUse = choice(KAB);
-        const ts = dayStart + randi(8 * 3600 * 1000, 17 * 3600 * 1000);
-
-        if (rnd() < 0.8) {
-          const useQty = randi(1, 3);
-          const available = stockLocal[bc].quantity;
-          if (available < useQty) {
-            const restockQty = randi(10, 30);
-            addLog(choice(['Nat', 'Edu']), bc, +restockQty, ts - 10 * 60 * 1000, 'Voorraadbeheer');
-          }
-          addLog(user, bc, -useQty, ts, ctxUse);
-        } else {
-          const refill = randi(5, 25);
-          addLog(choice(['Nat', 'Edu']), bc, +refill, ts, 'Voorraadbeheer');
-        }
-      }
-    }
-
-    localStorage.setItem('stock', JSON.stringify(stockLocal));
-    localStorage.setItem('logbook', JSON.stringify(logLocal));
-
-    console.log('%cFake data klaar ✅', 'color:#0a8754;font-weight:bold;');
-    console.log('Tip: refresh de app om de UI te updaten.');
-  }
-
-  window.seedFakeData = seedFakeData;
-})();
-

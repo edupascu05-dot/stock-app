@@ -167,7 +167,6 @@ function renderAdminProducts() {
       tbody.appendChild(tr);
     });
 
-  // Hook: delete product
   tbody.querySelectorAll('.delete-product-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const bc = btn.getAttribute('data-barcode');
@@ -193,7 +192,6 @@ function renderAdminUsers() {
       tbody.appendChild(tr);
     });
 
-  // Hook remove
   tbody.querySelectorAll('button.danger-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const code = btn.getAttribute('data-code');
@@ -260,7 +258,6 @@ function registerAction() {
 
   clearMessages();
 
-  // barcode of naam → barcodeValue
   const input = inputEl.value.trim();
   let barcodeValue = null;
 
@@ -442,7 +439,6 @@ function removeUser(code) {
   if (!isAdminUser(loggedInUser)) { warning.textContent = 'Alleen admins kunnen gebruikers verwijderen.'; return; }
   if (!users[code]) { warning.textContent = 'Gebruiker bestaat niet.'; return; }
 
-  // Beveiliging: niet jezelf verwijderen, en minstens 1 admin behouden
   if (users[code] === loggedInUser) { warning.textContent = 'Je kunt jezelf niet verwijderen.'; return; }
 
   const isTargetAdmin = isAdminUser(users[code]);
@@ -457,7 +453,7 @@ function removeUser(code) {
 }
 
 function removeProduct(barcode) {
-  if (!isAdminUser(loggedInUser)) return;        // gatekeep
+  if (!isAdminUser(loggedInUser)) return;
   const prod = stock[barcode];
   if (!prod) return;
 
@@ -471,7 +467,6 @@ function removeProduct(barcode) {
   delete stock[barcode];
   saveStock();
 
-  // UI refresh
   renderProductList();
   renderStockList();
   renderLowStockList();
@@ -484,7 +479,6 @@ function removeProduct(barcode) {
 }
 
 function downloadLogbookExcel() {
-  // Headers + data
   const headers = ['Medewerker','Barcode','Productnaam','Aantal','Tijdstip','Kabinet'];
   const rows = logbook.map(entry => {
     const date = new Date(entry.timestamp);
@@ -499,15 +493,11 @@ function downloadLogbookExcel() {
     ];
   });
 
-  // Maak sheet
   const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Logboek");
-
-  // Export .xlsx
   XLSX.writeFile(workbook, "logboek.xlsx");
 }
-
 
 // ========= INIT =========
 window.onload = function () {
@@ -524,7 +514,6 @@ window.onload = function () {
     renderFullLog();
     renderUserInfo();
 
-    // Admin knop tonen voor Edu/Nat
     const adminBtn = document.getElementById('openAdminBtn');
     if (adminBtn) adminBtn.classList.toggle('hidden', !isAdminUser(loggedInUser));
 
@@ -663,10 +652,9 @@ window.onload = function () {
 
   // Logboek download
   document.getElementById('downloadLogBtn')?.addEventListener('click', () => {
-  if (!isAdminUser(loggedInUser)) return;
-  downloadLogbookExcel();  // 👈 gebruik nu Excel
-});
-
+    if (!isAdminUser(loggedInUser)) return;
+    downloadLogbookExcel();
+  });
 
   // Register-knop
   const registerBtn = document.getElementById('registerBtn');
@@ -677,7 +665,7 @@ window.onload = function () {
     });
   }
 
-  // 🔘 Publieke producten-overzicht (read-only) togglen
+  // Publieke producten-overzicht (read-only) togglen
   const togglePublicBtn = document.getElementById('togglePublicProductsBtn');
   const publicPanel = document.getElementById('publicProductsPanel');
   if (togglePublicBtn && publicPanel) {
@@ -719,3 +707,300 @@ function validateNewProductLive() {
   }
   warning.textContent = msg;
 }
+
+// ============= ANALYTICS HELPERS =============
+function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x.getTime(); }
+function addDays(ts, n){ const d=new Date(ts); d.setDate(d.getDate()+n); return d.getTime(); }
+
+function getPeriodBounds(kind='week'){
+  const now = new Date();
+  if (kind === 'week') {
+    const to = now.getTime();
+    const from = addDays(startOfDay(now), -6); // incl. vandaag → 7 dagen
+    return { from, to };
+  }
+  if (kind === 'month') {
+    const y = now.getFullYear(), m = now.getMonth();
+    const from = new Date(y, m, 1).getTime();
+    const to = now.getTime();
+    return { from, to };
+  }
+  return { from:0, to: Date.now() };
+}
+
+function filterByPeriod(entries, from, to){
+  return entries.filter(e => e.timestamp >= from && e.timestamp <= to);
+}
+
+function groupUsageByProduct(entries){
+  const map = {};
+  entries.forEach(e=>{
+    const used = e.quantity < 0 ? -e.quantity : 0;
+    if (!used) return;
+    map[e.product] = (map[e.product] || 0) + used;
+  });
+  return map;
+}
+
+function groupUsageByUser(entries){
+  const map = {};
+  entries.forEach(e=>{
+    const used = e.quantity < 0 ? -e.quantity : 0;
+    if (!used) return;
+    map[e.user] = (map[e.user] || 0) + used;
+  });
+  return map;
+}
+
+function dailyTimeline(entries){
+  const map = {};
+  entries.forEach(e=>{
+    const used = e.quantity < 0 ? -e.quantity : 0;
+    if (!used) return;
+    const day = startOfDay(e.timestamp);
+    map[day] = (map[day] || 0) + used;
+  });
+  return map;
+}
+
+function toArraySorted(obj, labelMapper=(k)=>k){
+  return Object.keys(obj)
+    .map(k=>({ key:k, label: labelMapper(k), value: obj[k] }))
+    .sort((a,b)=>b.value - a.value);
+}
+
+function computeDelta(currMap, prevMap){
+  const keys = new Set([...Object.keys(currMap||{}), ...Object.keys(prevMap||{})]);
+  const arr = [];
+  keys.forEach(k=>{
+    const curr = currMap[k] || 0;
+    const prev = prevMap[k] || 0;
+    const delta = curr - prev;
+    const deltaPct = prev === 0 ? (curr>0 ? 1 : 0) : (delta / prev);
+    arr.push({ key:k, value:curr, prev, delta, deltaPct });
+  });
+  arr.sort((a,b)=>Math.abs(b.delta) - Math.abs(a.delta));
+  return arr;
+}
+
+function detectSpikes(dayMap){
+  const days = Object.keys(dayMap).map(Number).sort((a,b)=>a-b);
+  const vals = days.map(d=>dayMap[d]);
+  if (vals.length < 3) return [];
+  const avg = vals.reduce((s,v)=>s+v,0)/vals.length;
+  const sd = Math.sqrt(vals.reduce((s,v)=>s+(v-avg)*(v-avg),0)/vals.length);
+  const threshold = avg + 2*sd;
+  return days
+    .filter(d => dayMap[d] > threshold)
+    .map(d => ({ day:d, value: dayMap[d], avg, sd, threshold }));
+}
+
+// ============= RUN ANALYTICS =============
+function runAnalytics(period='week'){
+  const {from, to} = getPeriodBounds(period);
+  const cur = filterByPeriod(logbook, from, to);
+
+  const spanDays = period==='week' ? 7 : 30;
+  const prevFrom = addDays(from, -spanDays);
+  const prevTo   = addDays(to,   -spanDays);
+  const prev = filterByPeriod(logbook, prevFrom, prevTo);
+
+  const curByProduct = groupUsageByProduct(cur);
+  const prevByProduct = groupUsageByProduct(prev);
+  const curByUser = groupUsageByUser(cur);
+
+  const deltas = computeDelta(curByProduct, prevByProduct);
+  const timeline = dailyTimeline(cur);
+  const spikes = detectSpikes(timeline);
+
+  const labelByBarcode = (bc)=> (stock[bc]?.name || bc);
+
+  return {
+    period: {from, to, prevFrom, prevTo},
+    perProduct: toArraySorted(curByProduct, labelByBarcode),
+    perUser: toArraySorted(curByUser, k=>k),
+    deltas: deltas.map(d=>({
+      ...d,
+      label: labelByBarcode(d.key)
+    })),
+    spikes
+  };
+}
+
+// ============= TEXT SUMMARY (voor in e-mail) =============
+function buildSummaryText(ana){
+  const fmtDate = ts => new Date(ts).toLocaleDateString();
+  const topUp = ana.deltas.filter(d=>d.delta>0).slice(0,3);
+  const topDown = ana.deltas.filter(d=>d.delta<0).slice(0,3);
+
+  const upLines = topUp.map(d=>`↑ ${d.label}: +${d.delta} t.o.v. vorige periode`);
+  const downLines = topDown.map(d=>`↓ ${d.label}: ${d.delta} t.o.v. vorige periode`);
+
+  const spikeLines = ana.spikes.map(s=>`⚠ ${fmtDate(s.day)}: ${s.value} (gem ${s.avg.toFixed(1)} | drempel ${s.threshold.toFixed(1)})`);
+
+  return [
+    `Periode: ${fmtDate(ana.period.from)} – ${fmtDate(ana.period.to)}`,
+    '',
+    'Top stijgers:',
+    ...(upLines.length? upLines : ['—']),
+    '',
+    'Top dalers:',
+    ...(downLines.length? downLines : ['—']),
+    '',
+    'Spikes (opvallende pieken per dag):',
+    ...(spikeLines.length? spikeLines : ['—'])
+  ].join('\n');
+}
+
+// ============= EXCEL EXPORT (meerdere tabs) =============
+function downloadAnalyticsExcel(period='week'){
+  const ana = runAnalytics(period);
+
+  const summaryText = buildSummaryText(ana);
+  const summaryRows = summaryText.split('\n').map(line=>[line]);
+
+  const ppHeaders = ['Barcode','Naam','Verbruik'];
+  const ppRows = ana.perProduct.map(r=>[r.key, r.label, r.value]);
+
+  const puHeaders = ['Medewerker','Verbruik'];
+  const puRows = ana.perUser.map(r=>[r.label, r.value]);
+
+  const dHeaders = ['Barcode','Naam','Huidig','Vorige','Delta','Delta %'];
+  const dRows = ana.deltas.map(d=>[
+    d.key, d.label, d.value, d.prev, d.delta, (d.deltaPct*100).toFixed(1)+'%'
+  ]);
+
+  const tlHeaders = ['Datum','Totaal verbruik'];
+  const tlMap = dailyTimeline(filterByPeriod(logbook, ana.period.from, ana.period.to));
+  const tlRows = Object.keys(tlMap).sort().map(dayTs=>[
+    new Date(Number(dayTs)).toLocaleDateString(),
+    tlMap[dayTs]
+  ]);
+
+  const wb = XLSX.utils.book_new();
+
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  const ws2 = XLSX.utils.aoa_to_sheet([ppHeaders, ...ppRows]);
+  const ws3 = XLSX.utils.aoa_to_sheet([puHeaders, ...puRows]);
+  const ws4 = XLSX.utils.aoa_to_sheet([dHeaders, ...dRows]);
+  const ws5 = XLSX.utils.aoa_to_sheet([tlHeaders, ...tlRows]);
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Samenvatting');
+  XLSX.utils.book_append_sheet(wb, ws2, 'PerProduct');
+  XLSX.utils.book_append_sheet(wb, ws3, 'PerUser');
+  XLSX.utils.book_append_sheet(wb, ws4, 'Deltas');
+  XLSX.utils.book_append_sheet(wb, ws5, 'Timeline');
+
+  const filename = `rapport_${period}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+// ============= FAKE DATA SEEDER (voor testen) =============
+(function(){
+  let __seed = 42;
+  function rnd(){ __seed = (__seed*9301 + 49297) % 233280; return __seed / 233280; }
+  function randi(a,b){ return Math.floor(rnd()*(b-a+1))+a; }
+  function choice(arr){ return arr[randi(0,arr.length-1)]; }
+  function startOfDayLocal(ts){ const d=new Date(ts); d.setHours(0,0,0,0); return d.getTime(); }
+
+  const DEFAULT_USERS = { '1234':'Nat','5678':'Alex','4444':'Edu','9999':'Iri' };
+
+  const PRODUCT_CATALOG = [
+    { code:'+ADT10131255', name:'zak', qty:120 },
+    { code:'+ADT20021111', name:'klem A', qty:60 },
+    { code:'+ADT3003BLUE', name:'spuitje blauw', qty:180 },
+    { code:'IMPL-3.5x11', name:'implantaat 3.5x11', qty:15 },
+    { code:'IMPL-4.0x10', name:'implantaat 4.0x10', qty:12 },
+    { code:'COMP-A2',      name:'composiet A2', qty:90 },
+    { code:'COMP-A3',      name:'composiet A3', qty:100 },
+    { code:'ETCH-37',      name:'etsgel 37%', qty:45 },
+    { code:'BOND-Opti',    name:'bonding', qty:55 },
+    { code:'ANES-Art',     name:'verdoving articaine', qty:80 },
+    { code:'ANES-Lido',    name:'verdoving lidocaïne', qty:70 },
+    { code:'GLASSION',     name:'glasionomeer', qty:30 },
+    { code:'NAALD-30G',    name:'naald 30G', qty:200 },
+    { code:'RUB-DAM',      name:'rubberdam', qty:40 },
+  ];
+
+  const USERS = ['Nat','Alex','Edu','Iri'];
+  const KAB = ['Kabinet 1','Kabinet 2','Kabinet 3','Kabinet 4','Kabinet 5','Kabinet 6'];
+
+  function seedFakeData(opts={}){
+    const {
+      clearExisting = true,
+      days = 45,
+      spikeDays = 2
+    } = opts;
+
+    if (clearExisting) {
+      localStorage.removeItem('stock');
+      localStorage.removeItem('logbook');
+      localStorage.setItem('users', JSON.stringify(DEFAULT_USERS));
+    } else {
+      if (!localStorage.getItem('users')) {
+        localStorage.setItem('users', JSON.stringify(DEFAULT_USERS));
+      }
+    }
+
+    const stockLocal = {};
+    PRODUCT_CATALOG.forEach(p => stockLocal[p.code] = { name: p.name, quantity: p.qty });
+    const logLocal = [];
+    const now = Date.now();
+
+    function addLog(user, barcode, qty, ts, ctx){
+      logLocal.push({ user, product: barcode, quantity: qty, timestamp: ts, context: ctx });
+      stockLocal[barcode].quantity += qty;
+    }
+
+    const dayOffsets = Array.from({length: days}, (_,i)=>i);
+    const spikeOffsets = new Set();
+    while (spikeOffsets.size < Math.min(spikeDays, days)) {
+      spikeOffsets.add(randi(0, days-1));
+    }
+
+    for (let d = days-1; d >= 0; d--) {
+      const dayStart = startOfDayLocal(now - d*24*3600*1000);
+      const eventsToday = spikeOffsets.has(d) ? randi(14,22) : randi(5,12);
+
+      for (let e = 0; e < eventsToday; e++) {
+        const prod = choice(PRODUCT_CATALOG);
+        const bc = prod.code;
+        const user = choice(USERS);
+        const ctxUse = choice(KAB);
+        const ts = dayStart + randi(8*3600*1000, 17*3600*1000);
+
+        if (rnd() < 0.8) {
+          const useQty = randi(1,3);
+          const available = stockLocal[bc].quantity;
+          if (available < useQty) {
+            const restockQty = randi(10,30);
+            addLog(choice(['Nat','Edu']), bc, +restockQty, ts - 10*60*1000, 'Voorraadbeheer');
+          }
+          addLog(user, bc, -useQty, ts, ctxUse);
+        } else {
+          const refill = randi(5,25);
+          addLog(choice(['Nat','Edu']), bc, +refill, ts, 'Voorraadbeheer');
+        }
+      }
+    }
+
+    const lowTargets = choice(PRODUCT_CATALOG.slice(0,6));
+    stockLocal[lowTargets.code].quantity = randi(2,5);
+    const lowTargets2 = choice(PRODUCT_CATALOG.slice(6,12));
+    stockLocal[lowTargets2.code].quantity = randi(1,4);
+
+    localStorage.setItem('stock', JSON.stringify(stockLocal));
+    localStorage.setItem('logbook', JSON.stringify(logLocal));
+
+    const totalEntries = logLocal.length;
+    const usedTotal = logLocal.filter(x=>x.quantity<0).reduce((s,x)=>s+(-x.quantity),0);
+    const addedTotal = logLocal.filter(x=>x.quantity>0).reduce((s,x)=>s+(x.quantity),0);
+
+    console.log('%cFake data klaar ✅', 'color: #0a8754; font-weight:bold;');
+    console.table(PRODUCT_CATALOG.map(p=>({barcode:p.code, name:p.name, eindVoorraad: stockLocal[p.code].quantity})));
+    console.log(`Entries: ${totalEntries} | Verbruikt: ${usedTotal} | Aangevuld: ${addedTotal}`);
+    console.log('Tip: refresh de app om de UI te updaten.');
+  }
+
+  window.seedFakeData = seedFakeData;
+})();
